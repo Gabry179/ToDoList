@@ -19,6 +19,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 
 
 public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
@@ -41,14 +42,13 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private KeyboardButton button2 = new KeyboardButton("✏️ Modifica");
     private KeyboardButton button3 = new KeyboardButton("🗑️ Rimuovi");
 
-    //Inline keyboard
-    private List<InlineKeyboardRow> rowInline = new ArrayList<>();
-    private InlineKeyboardMarkup markupInline = new InlineKeyboardMarkup(rowInline);
-
     //Connessione al db
     private Connection con = null;
     private Statement stmt = null;
     private ResultSet rs = null;
+
+    //Usata per individuare quale task cancellare o modificare
+    private int toDelete = 0;
 
     public TelegramBot(String clientToken) {
         this.telegramClient = new OkHttpTelegramClient(clientToken);
@@ -71,10 +71,10 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                     }
                     switch(state) {
                         case "getTitle":
-
                             if(text.equals("/annulla")){
                                 statusMap.put(chatId, "default");
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌ Annullato!");
+                                sendMessage = new SendMessage(chatId, "❌ Annullato!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
                                 replyKeyboardRemove.setRemoveKeyboard(false);
 
@@ -90,9 +90,31 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                 }
                                 break;
                             }
+                            if(toDelete != 0){
+                                int n = 0;
+                                con = MySql.getConnection();
+                                try {
+                                    stmt = con.createStatement();
+                                    rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
+                                    while(rs.next() && n<=toDelete) {
+                                        n+=1;
+                                        if(toDelete == n) {
+                                            toDelete = rs.getInt(1);
+                                            break;
+                                        }
+                                    }
+
+                                    stmt.executeUpdate("DELETE FROM `to-do_list`.task WHERE ID_Task="+toDelete);
+                                    toDelete = 0;
+                                    rs.close();
+                                    con.close();
+                                } catch (SQLException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
 
                             titleMap.put(chatId, text);
-                            sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "📝 Inserisci la descrizione!\n\n/annulla");
+                            sendMessage = new SendMessage(chatId, "📝 Inserisci la descrizione!\n\n/annulla");
                             try {
                                 telegramClient.execute(sendMessage);
                             } catch (TelegramApiException e) {
@@ -101,10 +123,10 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                             statusMap.put(chatId,"getDescription");
                             break;
                         case "getDescription":
-
                             if(text.equals("/annulla")){
                                 statusMap.put(chatId, "default");
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌ Annullato!");
+                                sendMessage = new SendMessage(chatId, "❌ Annullato!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
                                 replyKeyboardRemove.setRemoveKeyboard(false);
 
@@ -122,7 +144,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                             }
 
                             descriptionMap.put(chatId, text);
-                            sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "🕒 Inserisci la scadenza! (aaaa-mm-dd)\n\n/annulla");
+                            sendMessage = new SendMessage(chatId, "🕒 Inserisci la scadenza! (aaaa-mm-dd)\n\n/annulla");
                             try {
                                 telegramClient.execute(sendMessage);
                             } catch (TelegramApiException e) {
@@ -134,7 +156,8 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                         case "getDeadline":
                             if(text.equals("/annulla")){
                                 statusMap.put(chatId, "default");
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌Annullato!");
+                                sendMessage = new SendMessage(chatId, "❌Annullato!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
                                 replyKeyboardRemove.setRemoveKeyboard(false);
 
@@ -154,7 +177,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                             deadlineMap.put(chatId, text);
                             String title = titleMap.get(chatId);
                             String description = descriptionMap.get(chatId);
-                            sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "🗓️ Stai per inserire questa task:\n\nTitolo: " + title + "\nDescrizione: " + description + "\nScadenza: " + text + "\n\nVuoi confermare?");
+                            sendMessage = new SendMessage(chatId, "🗓️ Stai per inserire questa task:\n\nTitolo: " + title + "\nDescrizione: " + description + "\nScadenza: " + text + "\n\nVuoi confermare?");
 
                             //Bottoni per la conferma
                             List<KeyboardRow> keyboardConfirmation = new ArrayList<>();
@@ -176,6 +199,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                             }
                             statusMap.put(chatId, "getConfirmation");
                             break;
+
                         case "getConfirmation":
                             replyKeyboardRemove.setRemoveKeyboard(false);
                             replyKeyboardMarkup.setKeyboard(keyboard);
@@ -192,7 +216,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     throw new RuntimeException(e);
                                 }
 
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "✅ Dati inseriti correttamente!");
+                                sendMessage = new SendMessage(chatId, "✅ Dati inseriti correttamente!");
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
 
                                 statusMap.remove(chatId);
@@ -206,7 +230,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     e.printStackTrace();
                                 }
                             } else if(text.equals("❌ Annulla")){
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌ Annullato!");
+                                sendMessage = new SendMessage(chatId, "❌ Annullato!");
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
 
                                 statusMap.remove(chatId);
@@ -220,7 +244,123 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     e.printStackTrace();
                                 }
                             } else{
-                                sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌ Comando non valido. Riprova!");
+                                sendMessage = new SendMessage(chatId, "❌ Comando non valido. Riprova!");
+                                try {
+                                    telegramClient.execute(sendMessage);
+                                } catch (TelegramApiException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                            break;
+
+                        case "modify":
+                            if(text.equals("🔙 Indietro")){
+                                statusMap.put(chatId, "default");
+                                sendMessage = new SendMessage(chatId, "🔙 Torno indietro!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
+                                sendMessage.setReplyMarkup(replyKeyboardMarkup);
+                            }
+                            else {
+                                sendMessage = new SendMessage(chatId, "🖊️ Inserisci il titolo.\n\n/annulla");
+                                statusMap.put(chatId, "getTitle");
+                                toDelete = Integer.parseInt(text);
+                                //Le due righe sotto nascondono i pulsanti del bot
+                                replyKeyboardRemove.setRemoveKeyboard(true);
+                                sendMessage.setReplyMarkup(replyKeyboardRemove);
+                            }
+                            try {
+                                telegramClient.execute(sendMessage);
+                            } catch (TelegramApiException e) {
+                                e.printStackTrace();
+                            }
+                            break;
+
+                        case "remove":
+                            int n = 0;
+                            toDelete = Integer.parseInt(text);
+                            if(text.equals("🔙 Indietro")){
+                                statusMap.put(chatId, "default");
+                                sendMessage = new SendMessage(chatId, "🔙 Torno indietro!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
+                                sendMessage.setReplyMarkup(replyKeyboardMarkup);
+                            } else {
+                                con = MySql.getConnection();
+                                try {
+                                    stmt = con.createStatement();
+                                    rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente=" + update.getMessage().getChat().getId());
+                                    while (rs.next()) {
+                                        n += 1;
+                                        if (toDelete == n) {
+                                            toDelete = rs.getInt(1);
+                                            break;
+                                        }
+                                    }
+                                    sendMessage = new SendMessage(chatId, "Stai per eliminare definitivamente questa task:\n\nTitolo: " + rs.getString("Titolo") + "\nDescrizione: " + rs.getString("Descrizione") + "\nScadenza: " + rs.getString("Scadenza") + "\n\nVuoi confermare?");
+                                    rs.close();
+                                    con.close();
+                                } catch (SQLException e) {
+                                    throw new RuntimeException(e);
+                                }
+
+                                statusMap.put(chatId, "removalConfirmation");
+
+                                //Bottoni per la conferma
+                                keyboardConfirmation = new ArrayList<>();
+                                replyKeyboardMarkupConfirmation = new ReplyKeyboardMarkup(keyboardConfirmation);
+                                rowConfirmation = new KeyboardRow();
+                                buttonConfirmation = new KeyboardButton("✅ Conferma");
+                                buttonCancel = new KeyboardButton("❌ Annulla");
+                                rowConfirmation.add(buttonConfirmation);
+                                rowConfirmation.add(buttonCancel);
+                                keyboardConfirmation.add(rowConfirmation);
+                                replyKeyboardMarkupConfirmation.setResizeKeyboard(true);
+                                replyKeyboardMarkupConfirmation.setKeyboard(keyboardConfirmation);
+                                sendMessage.setReplyMarkup(replyKeyboardMarkupConfirmation);
+                            }
+                            try {
+                                telegramClient.execute(sendMessage);
+                            } catch (TelegramApiException e) {
+                                e.printStackTrace();
+                            }
+                            break;
+                        case "removalConfirmation":
+                            if(text.equals("✅ Conferma")){
+                                //query
+                                con = MySql.getConnection();
+                                try {
+                                    stmt = con.createStatement();
+                                    stmt.executeUpdate("DELETE FROM `to-do_list`.task WHERE ID_Task="+toDelete);
+                                    toDelete = 0;
+                                    rs.close();
+                                    con.close();
+                                } catch (SQLException e) {
+                                    throw new RuntimeException(e);
+                                }
+
+                                sendMessage = new SendMessage(chatId, "✅ Dati cancellati correttamente!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
+                                sendMessage.setReplyMarkup(replyKeyboardMarkup);
+
+                                statusMap.remove(chatId);
+
+                                try {
+                                    telegramClient.execute(sendMessage);
+                                } catch (TelegramApiException e) {
+                                    e.printStackTrace();
+                                }
+                            } else if(text.equals("❌ Annulla")){
+                                sendMessage = new SendMessage(chatId, "❌ Annullato!");
+                                replyKeyboardMarkup.setKeyboard(keyboard);
+                                sendMessage.setReplyMarkup(replyKeyboardMarkup);
+                                statusMap.remove(chatId);
+
+                                try {
+                                    telegramClient.execute(sendMessage);
+                                } catch (TelegramApiException e) {
+                                    e.printStackTrace();
+                                }
+                            } else{
+                                sendMessage = new SendMessage(chatId, "❌ Comando non valido. Riprova!");
                                 try {
                                     telegramClient.execute(sendMessage);
                                 } catch (TelegramApiException e) {
@@ -236,7 +376,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     if(update.getMessage().getChat().getLastName() != null){
                                         user_complete_name += " " + update.getMessage().getChat().getLastName();
                                     }
-                                    sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "🤖 Benvenuto "+user_complete_name+"! Qui potrai gestire la tua to do list. Scegli l'operazione che vuoi effettuare!");
+                                    sendMessage = new SendMessage(chatId, "🤖 Benvenuto "+user_complete_name+"! Qui potrai gestire la tua to do list. Scegli l'operazione che vuoi effettuare!");
 
                                     //Bottoni
                                     if(keyboard.isEmpty()) {
@@ -259,7 +399,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     break;
 
                                 case "➕ Aggiungi":
-                                    sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "🖊️ Inserisci il titolo.\n\n/annulla");
+                                    sendMessage = new SendMessage(chatId, "🖊️ Inserisci il titolo.\n\n/annulla");
                                     statusMap.put(chatId, "getTitle");
 
                                     //Le due righe sotto nascondono i pulsanti del bot
@@ -274,7 +414,48 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     break;
 
                                 case "✏️ Modifica":
-                                    sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "📝 Scegli la task da modificare.");
+                                    con = MySql.getConnection();
+                                    n = 0;
+                                    String temp = "";
+
+                                    temp = "📝 Scegli la task da modificare:";
+
+                                    //bottoni per scegliere la task
+                                    List<KeyboardRow> keyboardManagement = new ArrayList<>();
+                                    KeyboardRow rowManagement = new KeyboardRow();
+                                    KeyboardButton buttonManagement;
+
+                                    try {
+                                        stmt = con.createStatement();
+                                        rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
+                                        while(rs.next()) {
+                                            n+=1;
+                                            if(n%5==0) { //per evitare che tutti i pulsanti vadano su una riga
+                                                keyboardManagement.add(rowManagement);
+                                                buttonManagement = new KeyboardButton(Integer.toString(n));
+                                                rowManagement = new KeyboardRow(buttonManagement);
+                                            } else{
+                                                buttonManagement = new KeyboardButton(Integer.toString(n));
+                                                rowManagement.add(buttonManagement);
+                                            }
+                                            temp += "\n\nTask " + n + ":\nTitolo: " + rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4);
+                                        }
+                                        rs.close();
+                                        con.close();
+                                    } catch (SQLException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                    keyboardManagement.add(rowManagement);
+                                    buttonManagement = new KeyboardButton("🔙 Indietro");
+                                    rowManagement = new KeyboardRow(buttonManagement);
+
+                                    sendMessage = new SendMessage(chatId, temp);
+
+                                    keyboardManagement.add(rowManagement);
+                                    replyKeyboardMarkup.setResizeKeyboard(true);
+                                    replyKeyboardMarkup.setKeyboard(keyboardManagement);
+                                    sendMessage.setReplyMarkup(replyKeyboardMarkup);
+                                    statusMap.put(chatId, "modify");
 
                                     try {
                                         telegramClient.execute(sendMessage);
@@ -284,7 +465,47 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     break;
 
                                 case "🗑️ Rimuovi":
-                                    sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "🗑️ Scegli la task da rimuovere.");
+                                    con = MySql.getConnection();
+                                    n = 0;
+
+                                    temp = "🗑️ Scegli la task da rimuovere:";
+
+                                    //bottoni per scegliere la task
+                                    keyboardManagement = new ArrayList<>();
+                                    rowManagement = new KeyboardRow();
+
+                                    try {
+                                        stmt = con.createStatement();
+                                        rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
+                                        while(rs.next()) {
+                                            n+=1;
+                                            if(n%5==0) { //per evitare che tutti i pulsanti vadano su una riga
+                                                keyboardManagement.add(rowManagement);
+                                                buttonManagement = new KeyboardButton(Integer.toString(n));
+                                                rowManagement = new KeyboardRow(buttonManagement);
+                                            } else{
+                                                buttonManagement = new KeyboardButton(Integer.toString(n));
+                                                rowManagement.add(buttonManagement);
+                                            }
+                                            temp += "\n\nTask " + n + ":\nTitolo: " + rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4);
+                                        }
+                                        rs.close();
+                                        con.close();
+                                    } catch (SQLException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                    keyboardManagement.add(rowManagement);
+                                    buttonManagement = new KeyboardButton("🔙 Indietro");
+                                    rowManagement = new KeyboardRow(buttonManagement);
+
+                                    sendMessage = new SendMessage(chatId, temp);
+
+                                    keyboardManagement.add(rowManagement);
+                                    replyKeyboardMarkup.setResizeKeyboard(true);
+                                    replyKeyboardMarkup.setKeyboard(keyboardManagement);
+                                    sendMessage.setReplyMarkup(replyKeyboardMarkup);
+
+                                    statusMap.put(chatId, "remove");
 
                                     try {
                                         telegramClient.execute(sendMessage);
@@ -295,25 +516,25 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
                                 case "☰ Lista":
                                     con = MySql.getConnection();
+                                    n = 0;
 
-                                    //Questa parte dovrebbe servire per l'inline e per scorrere la lista, ma non funziona
-                                    /*InlineKeyboardButton rowsInline = new InlineKeyboardButton().setText("Ciao");
-                                    rowInline.add(new InlineKeyboardRow(rowsInline));
-                                    markupInline.setKeyboard(rowInline);
-                                     */
+                                    temp = "📄 Ecco l'elenco delle tue task!";
 
-                                    //Questa è da sistemare perché mostra solo una task
                                     try {
                                         stmt = con.createStatement();
                                         rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
-                                        rs.next();
-                                        sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "📄 Ecco l'elenco delle tue task!\n\nTitolo: "+rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4));
+                                        while(rs.next()) {
+                                            n+=1;
+                                            temp += "\n\nTask " + n + ":\nTitolo: " + rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4);
+                                        }
                                         rs.close();
                                         con.close();
                                     } catch (SQLException e) {
                                         throw new RuntimeException(e);
                                     }
-                                    sendMessage.setReplyMarkup(markupInline);
+
+                                    sendMessage = new SendMessage(chatId, temp);
+
                                     try {
                                         telegramClient.execute(sendMessage);
                                     } catch (TelegramApiException e) {
@@ -322,7 +543,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     break;
 
                                 default:
-                                    sendMessage = new SendMessage(update.getMessage().getChatId().toString(), "❌ Comando non riconosciuto");
+                                    sendMessage = new SendMessage(chatId, "❌ Comando non riconosciuto");
 
                                     //Bottoni
                                     if(keyboard.isEmpty()) {
