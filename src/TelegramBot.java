@@ -11,15 +11,13 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Objects;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 
 public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
@@ -173,6 +171,21 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                 }
                                 break;
                             }
+                            SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd", Locale.ITALIAN);
+
+                            Date date = null;
+                            try {
+                                date = formatter.parse(text);
+                            } catch (ParseException e) {
+                                statusMap.put(chatId, "getDescription");
+                                sendMessage = new SendMessage(chatId, "Formato non valido, /riprova!");
+                                try {
+                                    telegramClient.execute(sendMessage);
+                                } catch (TelegramApiException exception) {
+                                    e.printStackTrace();
+                                }
+                                break;
+                            }
 
                             deadlineMap.put(chatId, text);
                             String title = titleMap.get(chatId);
@@ -277,7 +290,6 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
                         case "remove":
                             int n = 0;
-                            toDelete = Integer.parseInt(text);
                             if(text.equals("🔙 Indietro")){
                                 statusMap.put(chatId, "default");
                                 sendMessage = new SendMessage(chatId, "🔙 Torno indietro!");
@@ -285,6 +297,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                 sendMessage.setReplyMarkup(replyKeyboardMarkup);
                             } else {
                                 con = MySql.getConnection();
+                                toDelete = Integer.parseInt(text);
                                 try {
                                     stmt = con.createStatement();
                                     rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente=" + update.getMessage().getChat().getId());
@@ -523,18 +536,37 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     try {
                                         stmt = con.createStatement();
                                         rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
-                                        while(rs.next()) {
+                                        while(rs.next() && n<=5) {
                                             n+=1;
                                             temp += "\n\nTask " + n + ":\nTitolo: " + rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4);
                                         }
+
                                         rs.close();
                                         con.close();
                                     } catch (SQLException e) {
                                         throw new RuntimeException(e);
                                     }
-
-                                    sendMessage = new SendMessage(chatId, temp);
-
+                                    if(n>5) {
+                                        sendMessage = SendMessage.builder().chatId(chatId).text(temp).replyMarkup(InlineKeyboardMarkup
+                                                .builder()
+                                                .keyboardRow(
+                                                        new InlineKeyboardRow(
+                                                                InlineKeyboardButton
+                                                                        .builder()
+                                                                        .text("🔙 Indietro")
+                                                                        .callbackData("goBack")
+                                                                        .build(),
+                                                                InlineKeyboardButton
+                                                                        .builder()
+                                                                        .text("Avanti")
+                                                                        .callbackData("goForward")
+                                                                        .build()
+                                                        )
+                                                )
+                                                .build()).build();
+                                    } else{
+                                        sendMessage = new SendMessage(chatId, temp);
+                                    }
                                     try {
                                         telegramClient.execute(sendMessage);
                                     } catch (TelegramApiException e) {
@@ -564,6 +596,20 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     }
                             }
                     }
+                } else if (update.hasCallbackQuery()) {
+                    String call_data = update.getCallbackQuery().getData();
+                    long message_id = update.getCallbackQuery().getMessage().getMessageId();
+                    long chat_id = update.getCallbackQuery().getMessage().getChatId();
+
+                    switch (call_data) {
+                        case "goBack":
+
+                            break;
+                        case "goForward":
+
+                            break;
+                    }
+                    
                 }
             }
         }).start();

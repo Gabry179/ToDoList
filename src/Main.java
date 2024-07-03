@@ -8,6 +8,7 @@ import javax.xml.xpath.XPathFactory;
 
 public class Main {
     public static void main(String[] args) {
+
         XPath configPath = XPathFactory.newInstance().newXPath();
         String pathExpression = "/settings/bot_token";
         InputSource inputSource = new InputSource("src\\config.xml");
@@ -15,6 +16,8 @@ public class Main {
             String token = (String)configPath.compile(pathExpression).evaluate(inputSource, XPathConstants.STRING);
             TelegramBotsLongPollingApplication botApplication = new TelegramBotsLongPollingApplication();
             botApplication.registerBot(token, new TelegramBot(token));
+            DailySchedule bot = new DailySchedule(token);
+            bot.scheduleDailyCheck();
         } catch (XPathExpressionException e) {
             throw new RuntimeException(e);
         } catch (TelegramApiException e) {
