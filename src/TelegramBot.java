@@ -143,8 +143,7 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                 }
                                 break;
                             }
-
-                            descriptionMap.put(chatId, text);
+                            if(descriptionMap.isEmpty()) descriptionMap.put(chatId, text);
                             sendMessage = new SendMessage(chatId, "🕒 Inserisci la scadenza! (aaaa-mm-dd)\n\n/annulla");
                             try {
                                 telegramClient.execute(sendMessage);
