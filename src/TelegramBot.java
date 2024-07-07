@@ -1,6 +1,7 @@
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -18,6 +19,8 @@ import java.sql.Statement;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+
+import static java.lang.Math.toIntExact;
 
 
 public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
@@ -536,37 +539,15 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     try {
                                         stmt = con.createStatement();
                                         rs = stmt.executeQuery("SELECT * FROM `to-do_list`.task WHERE ID_Utente="+update.getMessage().getChat().getId());
-                                        while(rs.next() && n<=5) {
+                                        while(rs.next()) {
                                             n+=1;
                                             temp += "\n\nTask " + n + ":\nTitolo: " + rs.getString(2) + "\nDescrizione: " + rs.getString(3) + "\nScadenza: " + rs.getString(4);
                                         }
-
-                                        rs.close();
                                         con.close();
                                     } catch (SQLException e) {
                                         throw new RuntimeException(e);
                                     }
-                                    if(n>5) {
-                                        sendMessage = SendMessage.builder().chatId(chatId).text(temp).replyMarkup(InlineKeyboardMarkup
-                                                .builder()
-                                                .keyboardRow(
-                                                        new InlineKeyboardRow(
-                                                                InlineKeyboardButton
-                                                                        .builder()
-                                                                        .text("🔙 Indietro")
-                                                                        .callbackData("goBack")
-                                                                        .build(),
-                                                                InlineKeyboardButton
-                                                                        .builder()
-                                                                        .text("Avanti")
-                                                                        .callbackData("goForward")
-                                                                        .build()
-                                                        )
-                                                )
-                                                .build()).build();
-                                    } else{
-                                        sendMessage = new SendMessage(chatId, temp);
-                                    }
+                                    sendMessage = new SendMessage(chatId, temp);
                                     try {
                                         telegramClient.execute(sendMessage);
                                     } catch (TelegramApiException e) {
@@ -596,20 +577,6 @@ public class TelegramBot implements LongPollingSingleThreadUpdateConsumer {
                                     }
                             }
                     }
-                } else if (update.hasCallbackQuery()) {
-                    String call_data = update.getCallbackQuery().getData();
-                    long message_id = update.getCallbackQuery().getMessage().getMessageId();
-                    long chat_id = update.getCallbackQuery().getMessage().getChatId();
-
-                    switch (call_data) {
-                        case "goBack":
-
-                            break;
-                        case "goForward":
-
-                            break;
-                    }
-                    
                 }
             }
         }).start();
