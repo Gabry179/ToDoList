@@ -2,6 +2,6 @@
 	<bot_token>TOKEN</bot_token>
 	<dbUrl>URL</dbUrl>
 	<dbDriver>DRIVER</dbDriver>
-	<dbUsername>USERNAME</dbUsername>>
+	<dbUsername>USERNAME</dbUsername>
 	<dbPassword>PASSWORD</dbPassword>
 </settings>
